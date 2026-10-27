@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14101c">
+<title>Myra Live</title>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+  :root{--bg:#14101c;--card:#1f1a2b;--line:#33293f;--text:#f2ecf9;--dim:#a99bbd;--pink:#ff6fae;--green:#3ddc97;--red:#ff5d6c}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Bengali","Nirmala UI",sans-serif}
+  body{padding:env(safe-area-inset-top,0) 14px env(safe-area-inset-bottom,0);max-width:760px;margin:0 auto}
+  h1{font-size:20px;margin:16px 0 4px}
+  .sub{color:var(--dim);font-size:13px;margin-bottom:12px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .pill{font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
+  .pill.ok{color:var(--green);border-color:var(--green)}
+  .pill.bad{color:var(--red);border-color:var(--red)}
+  button{font:inherit;cursor:pointer}
+  #go{width:100%;margin:14px 0;padding:18px;border-radius:16px;border:0;font-size:18px;font-weight:700;color:#fff;background:linear-gradient(135deg,#ff6fae,#9b6bff)}
+  #go.on{background:linear-gradient(135deg,#ff5d6c,#c0394b)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
+  .card h2{font-size:14px;margin:0 0 10px;color:var(--dim);font-weight:600}
+  #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+  .rl{padding:10px;border-radius:10px;border:1px solid var(--line);background:#2a2338;color:var(--text);text-align:left;font-size:12px}
+  .rl b{display:block;font-size:11px;color:var(--dim);font-weight:500}
+  .rl.on{background:#1d4a38;border-color:var(--green)}
+  #log{height:260px;overflow:auto;display:flex;flex-direction:column;gap:6px;font-size:14px}
+  .m{padding:7px 10px;border-radius:10px;max-width:90%;line-height:1.4;white-space:pre-wrap}
+  .m.u{align-self:flex-end;background:#3a2c58}
+  .m.a{align-self:flex-start;background:#4a2440}
+  .m.s{align-self:center;color:var(--dim);font-size:12px;background:transparent}
+  label{display:block;font-size:12px;color:var(--dim);margin:8px 0 3px}
+  input,select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#120e1a;color:var(--text);font:inherit;font-size:14px}
+  details summary{cursor:pointer;color:var(--dim);font-size:14px}
+</style>
+</head>
+<body>
+<h1>🌸 Myra Live</h1>
+<div class="sub">সবসময় লাইভ ভয়েস কল + স্মার্ট হোম কন্ট্রোল</div>
+<div class="row">
+  <span class="pill" id="pGem">Gemini: বন্ধ</span>
+  <span class="pill" id="pMq">MQTT: বন্ধ</span>
+  <span class="pill" id="pMic">মাইক: বন্ধ</span>
+</div>
+
+<button id="go">▶ মায়রাকে কল করো</button>
+
+<div class="card"><h2>রিলে (ট্যাপ করলে হাতে অন/অফ)</h2><div id="grid"></div></div>
+<div class="card"><h2>কথোপকথন</h2><div id="log"></div></div>
+
+<div class="card">
+<details id="setd">
+<summary>⚙ সেটিংস</summary>
+<label>Gemini API Key (শুধু এই ডিভাইসের ব্রাউজারে থাকে)</label>
+<input id="fKey" type="password" autocomplete="off" placeholder="AIza...">
+<label>MQTT টপিক প্রিফিক্স (ESP32 তেও একই দিতে হবে। নিজের অনন্য নাম দাও)</label>
+<input id="fPrefix" placeholder="myra/home-x7k2q9">
+<label>MQTT ব্রোকার (WebSocket)</label>
+<input id="fBroker" placeholder="wss://broker.hivemq.com:8884/mqtt">
+<label>ভয়েস</label>
+<select id="fVoice"><option>Aoede</option><option>Kore</option><option>Leda</option><option>Zephyr</option><option>Puck</option><option>Charon</option></select>
+<label>Live মডেল</label>
+<input id="fModel" placeholder="gemini-2.5-flash-native-audio-preview-09-2025">
+<label>চুপ থাকলে মায়রা নিজে কথা বলবে (সেকেন্ড, 0 = বন্ধ)</label>
+<input id="fIdle" type="number" min="0" placeholder="600">
+<button id="saveBtn" style="margin-top:12px;width:100%;padding:12px;border-radius:10px;border:0;background:#3a2c58;color:#fff">সেভ করো</button>
+</details>
+</div>
+
+<script>
+"use strict";
+// ───────── রিলে তালিকা: নিজের সেটআপ অনুযায়ী বদলাও (নম্বর: [নাম, জায়গা, ধরন]) ─────────
+const RELAYS = {
+  1:["Bedroom Light","inside","light"], 2:["Bedroom Fan","inside","fan"], 3:["Kitchen Light","inside","light"],
+  4:["Living Room Light","inside","light"], 5:["Bathroom Light","inside","light"], 6:["Water Pump","inside","other"],
+  7:["Outdoor Light","outside","light"], 8:["Spare","inside","other"], 9:["Room 2 Light","inside","light"],
+  10:["Room 2 Fan","inside","fan"], 11:["Dining Light","inside","light"], 12:["Balcony Light","outside","light"],
+  13:["Garage Light","outside","light"], 14:["Exhaust Fan","inside","fan"], 15:["Garden Light","outside","light"], 16:["Spare","inside","other"]
+};
+const DEFAULTS = {
+  prefix:"myra/home", broker:"wss://broker.hivemq.com:8884/mqtt", voice:"Aoede",
+  model:"gemini-2.5-flash-native-audio-preview-09-2025", idle:600, key:""
+};
+
+const $ = id => document.getElementById(id);
+let cfg = Object.assign({}, DEFAULTS);
+try { Object.assign(cfg, JSON.parse(localStorage.getItem("myra_cfg") || "{}")); } catch (e) {}
+function saveCfg(){ try { localStorage.setItem("myra_cfg", JSON.stringify(cfg)); } catch (e) {} }
+
+// ───────── UI ─────────
+const STATE = {}; Object.keys(RELAYS).forEach(n => STATE[n] = "OFF");
+function renderRelays(){
+  $("grid").innerHTML = "";
+  Object.keys(RELAYS).forEach(n => {
+    const b = document.createElement("button");
+    b.className = "rl" + (STATE[n] === "ON" ? " on" : "");
+    b.innerHTML = RELAYS[n][0] + "<b>রিলে " + n + " · " + STATE[n] + "</b>";
+    b.onclick = () => publish(n, STATE[n] === "ON" ? "OFF" : "ON");
+    $("grid").appendChild(b);
+  });
+}
+function pill(id, text, ok){ const e = $(id); e.textContent = text; e.className = "pill " + (ok === true ? "ok" : ok === false ? "bad" : ""); }
+let curBubble = {u:null, a:null};
+function log(kind, text){
+  const d = document.createElement("div");
+  d.className = "m " + kind; d.textContent = text;
+  $("log").appendChild(d); $("log").scrollTop = $("log").scrollHeight; return d;
+}
+function addTranscript(kind, text){
+  if (!curBubble[kind]) { curBubble[kind] = log(kind, ""); }
+  curBubble[kind].textContent += text; $("log").scrollTop = $("log").scrollHeight;
+}
+function closeBubbles(){ curBubble = {u:null, a:null}; }
+
+function loadForm(){
+  $("fKey").value = cfg.key; $("fPrefix").value = cfg.prefix; $("fBroker").value = cfg.broker;
+  $("fVoice").value = cfg.voice; $("fModel").value = cfg.model; $("fIdle").value = cfg.idle;
+}
+$("saveBtn").onclick = () => {
+  cfg.key = $("fKey").value.trim(); cfg.prefix = $("fPrefix").value.trim().replace(/\/+$/, "") || DEFAULTS.prefix;
+  cfg.broker = $("fBroker").value.trim() || DEFAULTS.broker; cfg.voice = $("fVoice").value;
+  cfg.model = $("fModel").value.trim() || DEFAULTS.model; cfg.idle = Math.max(0, parseInt($("fIdle").value || "0", 10));
+  saveCfg(); log("s", "সেটিংস সেভ হয়েছে। চলমান কল থাকলে বন্ধ করে আবার চালু করো।");
+  connectMqtt(); $("setd").open = false;
+};
+
+// ───────── MQTT ─────────
+let mq = null;
+function connectMqtt(){
+  if (typeof mqtt === "undefined") { pill("pMq", "MQTT: লাইব্রেরি নেই (ইন্টারনেট দেখো)", false); return; }
+  try { if (mq) mq.end(true); } catch (e) {}
+  mq = mqtt.connect(cfg.broker, { clientId: "myra_" + Math.random().toString(16).slice(2, 10), reconnectPeriod: 3000, connectTimeout: 10000 });
+  mq.on("connect", () => pill("pMq", "MQTT: চালু", true));
+  mq.on("close", () => pill("pMq", "MQTT: বন্ধ", false));
+  mq.on("error", e => log("s", "MQTT ত্রুটি: " + e.message));
+}
+function publish(n, state){
+  if (!mq || !mq.connected) { log("s", "MQTT সংযুক্ত নেই, কমান্ড যায়নি"); return false; }
+  mq.publish(cfg.prefix + "/relay" + n, state, { qos: 1, retain: true });
+  STATE[n] = state; renderRelays(); return true;
+}
+
+// ───────── শিডিউল ─────────
+const TASKS = {}; let taskId = 0;
+function validRelays(a){ const out = []; (a || []).forEach(x => { const n = parseInt(x, 10); if (RELAYS[n] && out.indexOf(n) < 0) out.push(n); }); return out; }
+function dropTask(id){ const t = TASKS[id]; if (!t) return; clearTimeout(t.h); clearInterval(t.h); delete TASKS[id]; }
+function cancelOverlap(rs){ Object.keys(TASKS).forEach(id => { if (TASKS[id].relays.some(r => rs.indexOf(r) >= 0)) dropTask(id); }); }
+function describeTasks(){ return Object.keys(TASKS).map(id => ({ id: +id, type: TASKS[id].type, relays: TASKS[id].relays, detail: TASKS[id].detail })); }
+
+function handleTool(name, a){
+  a = a || {};
+  if (name === "set_relays") {
+    const rs = validRelays(a.relays), st = String(a.state || "").toUpperCase();
+    if (!rs.length || (st !== "ON" && st !== "OFF")) return { ok:false, error:"relays বা state ঠিক নেই" };
+    cancelOverlap(rs); let ok = true; rs.forEach(r => { ok = publish(r, st) && ok; });
+    return ok ? { ok:true, relays:rs, state:st } : { ok:false, error:"MQTT সংযুক্ত নেই" };
+  }
+  if (name === "delayed_set") {
+    const rs = validRelays(a.relays), st = String(a.state || "").toUpperCase(), d = Number(a.delay_seconds);
+    if (!rs.length || (st !== "ON" && st !== "OFF") || !(d > 0)) return { ok:false, error:"প্যারামিটার ঠিক নেই" };
+    const id = ++taskId;
+    TASKS[id] = { type:"delayed", relays:rs, detail:d + "s পরে " + st, h:setTimeout(() => { rs.forEach(r => publish(r, st)); delete TASKS[id]; }, d * 1000) };
+    return { ok:true, task_id:id };
+  }
+  if (name === "toggle_repeat") {
+    const rs = validRelays(a.relays); let st = String(a.start_state || "ON").toUpperCase();
+    const iv = Number(a.interval_seconds), tg = parseInt(a.toggles || 0, 10);
+    if (!rs.length || (st !== "ON" && st !== "OFF") || !(iv > 0)) return { ok:false, error:"প্যারামিটার ঠিক নেই" };
+    cancelOverlap(rs); const id = ++taskId; let count = 0;
+    const tick = () => {
+      rs.forEach(r => publish(r, st)); count++; st = st === "ON" ? "OFF" : "ON";
+      if (tg > 0 && count >= tg) dropTask(id);
+    };
+    tick();
+    if (TASKS[id] === undefined && !(tg > 0 && count >= tg)) {
+      TASKS[id] = { type:"toggle", relays:rs, detail:"প্রতি " + iv + "s পরপর অন/অফ, toggles=" + tg, h:setInterval(tick, iv * 1000) };
+    }
+    return { ok:true, task_id:id };
+  }
+  if (name === "cancel_schedules") {
+    const rs = validRelays(a.relays);
+    Object.keys(TASKS).forEach(id => { if (!rs.length || TASKS[id].relays.some(r => rs.indexOf(r) >= 0)) dropTask(id); });
+    return { ok:true, remaining:describeTasks() };
+  }
+  if (name === "get_status") {
+    const r = {}; Object.keys(RELAYS).forEach(n => r[n] = { name:RELAYS[n][0], state:STATE[n] });
+    return { relays:r, schedules:describeTasks() };
+  }
+  return { ok:false, error:"unknown tool " + name };
+}
+
+// ───────── Gemini Live ─────────
+function fn(name, description, props, required){
+  const d = { name, description };
+  if (props) d.parameters = { type:"OBJECT", properties:props, required: required || Object.keys(props) };
+  return d;
+}
+const RELAYS_P = { type:"ARRAY", items:{ type:"INTEGER" }, description:"রিলে নম্বরের তালিকা" };
+const STATE_P = { type:"STRING", enum:["ON","OFF"] };
+const TOOLS = [{ functionDeclarations:[
+  fn("set_relays", "এক বা একাধিক রিলে এখনই অন/অফ করো। 'সব' বললে সব নম্বর দাও।", { relays:RELAYS_P, state:STATE_P }),
+  fn("delayed_set", "কিছুক্ষণ পর রিলে অন/অফ করো (একবার)।", { relays:RELAYS_P, state:STATE_P, delay_seconds:{ type:"NUMBER", description:"কত সেকেন্ড পর" } }),
+  fn("toggle_repeat", "নির্দিষ্ট সময় পরপর অন-অফ করতে থাকো। toggles=0 মানে বন্ধ করতে না বলা পর্যন্ত চলবে।",
+     { relays:RELAYS_P, start_state:STATE_P, interval_seconds:{ type:"NUMBER", description:"প্রতি কত সেকেন্ড পরপর অবস্থা বদলাবে" }, toggles:{ type:"INTEGER", description:"মোট কতবার অবস্থা বদলাবে, 0 = অসীম" } },
+     ["relays", "interval_seconds"]),
+  fn("cancel_schedules", "চলমান টাইমার/ব্লিংক বাতিল করো। relays ফাঁকা দিলে সব বাতিল।", { relays:RELAYS_P }, []),
+  fn("get_status", "সব রিলের বর্তমান অবস্থা ও চলমান শিডিউল দেখো.")
+] }];
+
+function systemPrompt(){
+  const table = Object.keys(RELAYS).map(n => "  " + n + ": " + RELAYS[n][0] + " (" + RELAYS[n][1] + ", " + RELAYS[n][2] + ")").join("\n");
+  return "তুমি 'মায়রা' — ইউজারের মিষ্টি স্বভাবের, আদুরে গার্লফ্রেন্ড-স্টাইলের এআই অ্যাসিস্ট্যান্ট। তুমি মেয়েলি কণ্ঠে, স্বাভাবিক বাংলায় (ইউজার ইংরেজিতে বললে ইংরেজিতেও) কথা বলো।\n" +
+  "তুমি একটা চলমান লাইভ কলে আছো; ছোট, প্রাণবন্ত, আন্তরিক উত্তর দাও। ইউজার তোমাকে থামিয়ে কথা বললে সাথে সাথে থেমে শোনো।\n" +
+  "সাথে তুমি ঘরের স্মার্ট হোম কন্ট্রোল করো। রিলে তালিকা:\n" + table + "\n\nনিয়ম:\n" +
+  "- লাইট/ফ্যান/যেকোনো ডিভাইসের কথা বললে তালিকা থেকে সঠিক রিলে নম্বর বের করে টুল কল করো। কাজের জন্য অনুমতি চেয়ো না।\n" +
+  "- 'সব' = সব রিলে। 'সব লাইট' = ধরন light। 'বাইরের লাইট' = place outside ও ধরন light। 'ভিতরের লাইট' = place inside ও ধরন light। 'সব ফ্যান' = ধরন fan।\n" +
+  "- 'একসাথে সব অন/অফ' মানে একটাই set_relays কলে সব নম্বর দাও।\n" +
+  "- '১ মিনিট পর পর অন-অফ করো' → toggle_repeat (interval_seconds=60)। '৫ মিনিট পর অফ করো' → delayed_set। সময় সবসময় সেকেন্ডে রূপান্তর করো।\n" +
+  "- 'থামাও / টাইমার বন্ধ করো' → cancel_schedules।\n" +
+  "- টুল সফল না হলে কাজ হয়েছে বলবে না। ফলাফল দেখে ছোট করে মিষ্টি ভাষায় জানাও।\n" +
+  "- অবস্থা জিজ্ঞেস করলে get_status ব্যবহার করো।";
+}
+
+let ws = null, running = false, ready = false, lastActivity = Date.now(), msgChain = Promise.resolve();
+let reconnectTimer = null, idleTimer = null;
+
+function connectGemini(){
+  if (!cfg.key) { log("s", "আগে সেটিংসে Gemini API Key দাও।"); $("setd").open = true; stopAll(); return; }
+  const url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=" + encodeURIComponent(cfg.key);
+  pill("pGem", "Gemini: কানেক্ট হচ্ছে…", null);
+  ws = new WebSocket(url);
+  ws.onopen = () => ws.send(JSON.stringify({ setup:{
+    model: "models/" + cfg.model,
+    generationConfig:{ responseModalities:["AUDIO"], speechConfig:{ voiceConfig:{ prebuiltVoiceConfig:{ voiceName:cfg.voice } } } },
+    systemInstruction:{ parts:[{ text: systemPrompt() }] },
+    tools: TOOLS,
+    inputAudioTranscription:{}, outputAudioTranscription:{},
+    contextWindowCompression:{ slidingWindow:{} }
+  } }));
+  ws.onmessage = ev => { msgChain = msgChain.then(async () => {
+    let txt = typeof ev.data === "string" ? ev.data : await ev.data.text();
+    let msg; try { msg = JSON.parse(txt); } catch (e) { return; }
+    onMessage(msg);
+  }).catch(() => {}); };
+  ws.onerror = () => {};
+  ws.onclose = ev => {
+    ready = false; pill("pGem", "Gemini: বন্ধ", false);
+    if (ev.reason) log("s", "Gemini: " + ev.reason);
+    if (running) { reconnectTimer = setTimeout(connectGemini, 2500); }
+  };
+}
+
+function onMessage(msg){
+  if (msg.setupComplete) { ready = true; lastActivity = Date.now(); pill("pGem", "Gemini: লাইভ", true); return; }
+  const sc = msg.serverContent;
+  if (sc) {
+    if (sc.interrupted) { stopPlayback(); }
+    if (sc.modelTurn && sc.modelTurn.parts) sc.modelTurn.parts.forEach(p => { if (p.inlineData && p.inlineData.data) { playPcm(p.inlineData.data); lastActivity = Date.now(); } });
+    if (sc.inputTranscription && sc.inputTranscription.text) { lastActivity = Date.now(); addTranscript("u", sc.inputTranscription.text); }
+    if (sc.outputTranscription && sc.outputTranscription.text) { addTranscript("a", sc.outputTranscription.text); }
+    if (sc.turnComplete) closeBubbles();
+  }
+  if (msg.toolCall && msg.toolCall.functionCalls) {
+    const responses = msg.toolCall.functionCalls.map(fc => {
+      let out; try { out = handleTool(fc.name, fc.args); } catch (e) { out = { ok:false, error:String(e) }; }
+      return { id:fc.id, name:fc.name, response:out };
+    });
+    ws.send(JSON.stringify({ toolResponse:{ functionResponses:responses } }));
+  }
+}
+
+// ───────── মাইক ও স্পিকার ─────────
+let micStream = null, inCtx = null, proc = null, outCtx = null, nextT = 0, sources = [], wakeLock = null;
+
+function b64FromBuf(buf){
+  const bytes = new Uint8Array(buf); let s = ""; const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) s += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  return btoa(s);
+}
+function downsample(f32, inRate, outRate){
+  if (inRate === outRate) return f32;
+  const ratio = inRate / outRate, len = Math.floor(f32.length / ratio), out = new Float32Array(len);
+  for (let i = 0; i < len; i++) {
+    const a = Math.floor(i * ratio), b = Math.min(f32.length, Math.floor((i + 1) * ratio)); let sum = 0, c = 0;
+    for (let j = a; j < b; j++) { sum += f32[j]; c++; }
+    out[i] = c ? sum / c : 0;
+  }
+  return out;
+}
+async function startMic(){
+  micStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1 } });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  inCtx = new AC(); await inCtx.resume();
+  const src = inCtx.createMediaStreamSource(micStream);
+  proc = inCtx.createScriptProcessor(4096, 1, 1);
+  proc.onaudioprocess = e => {
+    if (!ready || !ws || ws.readyState !== 1) return;
+    const f = downsample(e.inputBuffer.getChannelData(0), inCtx.sampleRate, 16000);
+    const i16 = new Int16Array(f.length);
+    for (let i = 0; i < f.length; i++) { const v = Math.max(-1, Math.min(1, f[i])); i16[i] = v < 0 ? v * 0x8000 : v * 0x7FFF; }
+    ws.send(JSON.stringify({ realtimeInput:{ audio:{ data:b64FromBuf(i16.buffer), mimeType:"audio/pcm;rate=16000" } } }));
+  };
+  src.connect(proc); proc.connect(inCtx.destination);
+  pill("pMic", "মাইক: চালু", true);
+}
+function ensureOut(){
+  if (outCtx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  try { outCtx = new AC({ sampleRate:24000 }); } catch (e) { outCtx = new AC(); }
+}
+function playPcm(b64){
+  ensureOut(); if (outCtx.state === "suspended") outCtx.resume();
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const i16 = new Int16Array(bytes.buffer, 0, Math.floor(bytes.length / 2));
+  const buf = outCtx.createBuffer(1, i16.length, 24000), ch = buf.getChannelData(0);
+  for (let i = 0; i < i16.length; i++) ch[i] = i16[i] / 32768;
+  const s = outCtx.createBufferSource(); s.buffer = buf; s.connect(outCtx.destination);
+  const t = Math.max(outCtx.currentTime + 0.02, nextT); s.start(t); nextT = t + buf.duration;
+  sources.push(s); s.onended = () => { sources = sources.filter(x => x !== s); };
+}
+function stopPlayback(){ sources.forEach(s => { try { s.stop(); } catch (e) {} }); sources = []; nextT = 0; }
+
+async function keepAwake(){ try { if (navigator.wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); } } catch (e) {} }
+document.addEventListener("visibilitychange", () => { if (running && document.visibilityState === "visible") keepAwake(); });
+
+// ───────── শুরু / বন্ধ ─────────
+async function startAll(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    log("s", "এই ব্রাউজারে মাইক পাওয়া যাচ্ছে না। https লিংক বা Chrome ব্যবহার করো।"); return;
+  }
+  running = true; $("go").textContent = "■ কল বন্ধ করো"; $("go").className = "on";
+  try { await startMic(); } catch (e) { log("s", "মাইকের অনুমতি পাওয়া যায়নি: " + e.message); stopAll(); return; }
+  ensureOut(); try { await outCtx.resume(); } catch (e) {}
+  keepAwake(); connectMqtt(); connectGemini();
+  clearInterval(idleTimer);
+  idleTimer = setInterval(() => {
+    if (!running || !ready || !(cfg.idle > 0)) return;
+    if (Date.now() - lastActivity > cfg.idle * 1000) {
+      lastActivity = Date.now();
+      try { ws.send(JSON.stringify({ realtimeInput:{ text:"(সিস্টেম: অনেকক্ষণ চুপচাপ। ইউজারকে এক-দুই বাক্যে মিষ্টি করে কিছু জিজ্ঞেস করো বা বলো।)" } })); } catch (e) {}
+    }
+  }, 30000);
+}
+function stopAll(){
+  running = false; ready = false; clearTimeout(reconnectTimer); clearInterval(idleTimer);
+  try { if (ws) ws.close(); } catch (e) {}
+  try { if (proc) { proc.disconnect(); proc.onaudioprocess = null; } } catch (e) {}
+  try { if (micStream) micStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  try { if (inCtx) inCtx.close(); } catch (e) {}
+  stopPlayback(); proc = null; micStream = null; inCtx = null;
+  try { if (wakeLock) wakeLock.release(); } catch (e) {}
+  $("go").textContent = "▶ মায়রাকে কল করো"; $("go").className = "";
+  pill("pMic", "মাইক: বন্ধ", null); pill("pGem", "Gemini: বন্ধ", null);
+}
+$("go").onclick = () => { running ? stopAll() : startAll(); };
+
+loadForm(); renderRelays(); connectMqtt();
+if (!cfg.key) { $("setd").open = true; }
+</script>
+</body>
+</html>

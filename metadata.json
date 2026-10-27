@@ -1,0 +1,6 @@
+{
+  "name": "Mayra — Your AI Girlfriend Assistant",
+  "description": "Mayra AI Companion with voice call interactions, edge-to-edge cinematic visuals, frosted glassmorphism, and live MQTT Smart Home control.",
+  "requestFramePermissions": ["microphone", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

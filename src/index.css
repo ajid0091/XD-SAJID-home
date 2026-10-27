@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .glass-card {
+    background: rgba(30, 23, 48, 0.65);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 32px 0 rgba(15, 11, 24, 0.37), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .glass-card-active {
+    background: rgba(42, 33, 64, 0.8);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 111, 174, 0.4);
+    box-shadow: 0 12px 40px 0 rgba(155, 107, 255, 0.25), inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+  }
+
+  .glass-card-glow {
+    background: rgba(26, 20, 42, 0.75);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(0, 229, 255, 0.35);
+    box-shadow: 0 8px 30px 0 rgba(0, 229, 255, 0.2);
+  }
+
+  .neon-text-pink {
+    text-shadow: 0 0 12px rgba(255, 111, 174, 0.6), 0 0 24px rgba(255, 111, 174, 0.3);
+  }
+
+  .neon-text-cyan {
+    text-shadow: 0 0 12px rgba(0, 229, 255, 0.6), 0 0 24px rgba(0, 229, 255, 0.3);
+  }
+
+  .neon-border-pink {
+    box-shadow: 0 0 16px rgba(255, 111, 174, 0.4), inset 0 0 8px rgba(255, 111, 174, 0.2);
+  }
+
+  .neon-border-cyan {
+    box-shadow: 0 0 16px rgba(0, 229, 255, 0.4), inset 0 0 8px rgba(0, 229, 255, 0.2);
+  }
+}
+
+/* Custom animations for orb, waveform, and gentle breathing */
+@keyframes orb-pulse {
+  0%, 100% {
+    transform: scale(0.97);
+    filter: drop-shadow(0 0 25px rgba(255, 111, 174, 0.4));
+  }
+  50% {
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 45px rgba(155, 107, 255, 0.65));
+  }
+}
+
+@keyframes ring-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes character-breathe {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-6px) scale(1.012);
+  }
+}
+
+.animate-orb-pulse {
+  animation: orb-pulse 3s ease-in-out infinite;
+}
+
+.animate-ring-spin {
+  animation: ring-spin 9s linear infinite;
+}
+
+.animate-ring-spin-fast {
+  animation: ring-spin 2.5s linear infinite;
+}
+
+.animate-character-breathe {
+  animation: character-breathe 6s ease-in-out infinite;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 11, 24, 0.5);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(155, 107, 255, 0.3);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 111, 174, 0.5);
+}
